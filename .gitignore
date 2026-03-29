@@ -1,0 +1,10 @@
+data/
+*.mp4
+*.mkv
+*.part
+node_modules/
+__pycache__/
+*.pyc
+.env
+downloads/
+*.log

@@ -1,0 +1,184 @@
+# ── ADD THIS BLOCK to backend/main.py after the /pipeline/start endpoint ──────
+
+@app.post("/pipeline/ingest-local")
+async def ingest_local_files(folder: str = "/app/data"):
+    """
+    Ingest all video files from a local folder into TwelveLabs.
+    Scans folder/sports, folder/news, folder/production subfolders.
+    Each video is indexed with TwelveLabs and saved to Neo4j.
+    
+    Usage:
+        curl -X POST "http://localhost:8008/pipeline/ingest-local"
+        curl -X POST "http://localhost:8008/pipeline/ingest-local?folder=/app/data"
+    """
+    import os
+    from pathlib import Path
+
+    VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'}
+
+    # Map folder name to category
+    CATEGORY_MAP = {
+        'sports':     'sports_archive',
+        'news':       'news_broadcast',
+        'production': 'production_broll',
+    }
+
+    # Scan all video files
+    data_path = Path(folder)
+    if not data_path.exists():
+        raise HTTPException(404, f"Folder {folder} not found in container")
+
+    video_files = []
+    for path in sorted(data_path.rglob('*')):
+        if path.suffix.lower() not in VIDEO_EXTENSIONS:
+            continue
+        if path.name.endswith('.part'):
+            continue  # Skip incomplete downloads
+        category = CATEGORY_MAP.get(path.parent.name, 'archive')
+        video_files.append((path, category))
+
+    if not video_files:
+        return {"error": "No video files found", "folder": folder,
+                "tip": "Make sure videos are in data/sports, data/news, data/production"}
+
+    results = []
+    total = len(video_files)
+    logger.info("local_ingest_start", total=total, folder=folder)
+
+    for i, (path, category) in enumerate(video_files):
+        # Clean video_id from filename
+        video_id = path.stem[:60].replace(' ', '_').replace('|', '').replace(':', '')
+        video_id = ''.join(c for c in video_id if c.isalnum() or c in '_-')
+        video_id = f"local_{category[:4]}_{video_id[:40]}"
+
+        logger.info("indexing_local_video", path=str(path), video_id=video_id,
+                    progress=f"{i+1}/{total}")
+
+        try:
+            # Index with TwelveLabs
+            tl_video_id = await tl_service.index_video_from_file(str(path), video_id)
+
+            if tl_video_id:
+                # Save to Neo4j
+                with db.driver.session() as s:
+                    s.run("""
+                        MERGE (v:Video {video_id: $vid})
+                        SET v.title         = $title,
+                            v.category      = $cat,
+                            v.twelvelabs_video_id = $tl_id,
+                            v.source        = 'local_file',
+                            v.file_path     = $fpath,
+                            v.file_size_mb  = $size_mb,
+                            v.indexed_at    = timestamp()
+                        MERGE (c:Category {name: $cat})
+                        MERGE (v)-[:IN_CATEGORY]->(c)
+                    """,
+                    vid=video_id,
+                    title=path.stem[:100],
+                    cat=category,
+                    tl_id=tl_video_id,
+                    fpath=str(path),
+                    size_mb=round(path.stat().st_size / 1024 / 1024, 1))
+
+                # Run segmentation automatically
+                try:
+                    content_type_map = {
+                        'sports_archive': 'sports',
+                        'news_broadcast': 'news',
+                        'production_broll': 'studio',
+                    }
+                    ct = content_type_map.get(category, 'auto')
+                    segments = await tl_service.segment_video(tl_video_id, content_type=ct)
+                    for j, seg in enumerate(segments):
+                        scene_id = f"{video_id}_seg_{j:03d}"
+                        with db.driver.session() as s:
+                            s.run("""
+                                MERGE (sc:Scene {scene_id: $sid})
+                                SET sc.video_id     = $vid,
+                                    sc.t_start      = $ts, sc.t_end = $te,
+                                    sc.segment_type = $stype,
+                                    sc.label        = $label,
+                                    sc.confidence   = $conf,
+                                    sc.viral_segment_score = $score,
+                                    sc.is_ad_break_candidate = $ad
+                                MERGE (v:Video {video_id: $vid})
+                                MERGE (sc)-[:SEGMENT_OF]->(v)
+                            """,
+                            sid=scene_id, vid=video_id,
+                            ts=float(seg.get('t_start', 0)),
+                            te=float(seg.get('t_end', 0)),
+                            stype=seg.get('segment_type', 'chapter'),
+                            label=seg.get('label', '')[:200],
+                            conf=float(seg.get('confidence', 0.8)),
+                            score=float(seg.get('viral_segment_score', 0.5)),
+                            ad=bool(seg.get('is_ad_break_candidate', False)))
+                except Exception as seg_err:
+                    logger.warning("segmentation_failed", video_id=video_id, error=str(seg_err)[:100])
+
+                results.append({
+                    "video_id":   video_id,
+                    "title":      path.stem[:80],
+                    "category":   category,
+                    "tl_video_id": tl_video_id,
+                    "status":     "indexed",
+                    "file_mb":    round(path.stat().st_size / 1024 / 1024, 1),
+                })
+                logger.info("video_indexed_ok", video_id=video_id, tl_id=tl_video_id)
+            else:
+                results.append({
+                    "video_id": video_id,
+                    "title":    path.stem[:80],
+                    "status":   "failed",
+                    "error":    "TwelveLabs indexing returned None",
+                })
+                logger.warning("video_index_failed", video_id=video_id)
+
+        except Exception as e:
+            results.append({
+                "video_id": video_id,
+                "title":    path.stem[:80],
+                "status":   "error",
+                "error":    str(e)[:200],
+            })
+            logger.error("video_ingest_error", video_id=video_id, error=str(e)[:200])
+
+    indexed = [r for r in results if r["status"] == "indexed"]
+    failed  = [r for r in results if r["status"] != "indexed"]
+
+    return {
+        "total_files":   total,
+        "indexed":       len(indexed),
+        "failed":        len(failed),
+        "folder":        folder,
+        "results":       results,
+        "track":         "local_ingest",
+    }
+
+
+@app.get("/pipeline/ingest-status")
+async def ingest_local_status(folder: str = "/app/data"):
+    """Check which local files have been indexed vs pending."""
+    from pathlib import Path
+    VIDEO_EXTENSIONS = {'.mp4', '.mov', '.avi', '.mkv', '.webm', '.m4v'}
+
+    data_path = Path(folder)
+    all_files = [p for p in data_path.rglob('*')
+                 if p.suffix.lower() in VIDEO_EXTENSIONS and not p.name.endswith('.part')]
+
+    # Check which are in Neo4j
+    indexed_ids = set()
+    with db.driver.session() as s:
+        recs = s.run("MATCH (v:Video) WHERE v.source = 'local_file' RETURN v.file_path")
+        indexed_ids = {r["v.file_path"] for r in recs}
+
+    pending = [str(f) for f in all_files if str(f) not in indexed_ids]
+    done    = [str(f) for f in all_files if str(f) in indexed_ids]
+
+    return {
+        "total_files": len(all_files),
+        "indexed":     len(done),
+        "pending":     len(pending),
+        "pending_files": pending,
+        "indexed_files": done,
+    }
+

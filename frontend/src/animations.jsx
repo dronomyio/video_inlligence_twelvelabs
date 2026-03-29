@@ -1,0 +1,103 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+export function PageWrap({ children }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 18 }} animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.28 }}
+      style={{ height: '100%' }}>
+      {children}
+    </motion.div>
+  );
+}
+export function FadeUp({ children, delay = 0, style = {} }) {
+  return (
+    <motion.div initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.32, delay }} style={style}>
+      {children}
+    </motion.div>
+  );
+}
+export function StaggerList({ children, style = {} }) {
+  return (
+    <motion.div initial="hidden" animate="visible"
+      variants={{ visible: { transition: { staggerChildren: 0.07 } } }} style={style}>
+      {children}
+    </motion.div>
+  );
+}
+export function StaggerItem({ children, style = {} }) {
+  return (
+    <motion.div variants={{
+      hidden: { opacity: 0, y: 12 },
+      visible: { opacity: 1, y: 0, transition: { duration: 0.28 } }
+    }} style={style}>
+      {children}
+    </motion.div>
+  );
+}
+export function CountUp({ to, duration = 1.2, decimals = 0, prefix = '', suffix = '' }) {
+  const [value, setValue] = useState(0);
+  const start = useRef(null); const raf = useRef(null);
+  useEffect(() => {
+    const target = parseFloat(to) || 0; start.current = null;
+    const step = (ts) => {
+      if (!start.current) start.current = ts;
+      const progress = Math.min((ts - start.current) / (duration * 1000), 1);
+      setValue(parseFloat(((1 - Math.pow(1 - progress, 3)) * target).toFixed(decimals)));
+      if (progress < 1) raf.current = requestAnimationFrame(step);
+    };
+    raf.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf.current);
+  }, [to]);
+  return React.createElement('span', null, prefix + value.toLocaleString() + suffix);
+}
+export function AnimatedBar({ value = 0, color = 'var(--cyan)', height = 4, delay = 0 }) {
+  return (
+    <div style={{ height, background: 'var(--bg3)', borderRadius: height }}>
+      <motion.div initial={{ width: 0 }} animate={{ width: `${Math.round(value * 100)}%` }}
+        transition={{ duration: 0.7, delay }} style={{ height: '100%', background: color, borderRadius: height }} />
+    </div>
+  );
+}
+export function SeverityPing({ severity }) {
+  const colors = { critical: '#ff1744', high: '#ff4455', medium: '#ffb800', low: '#00bfa5' };
+  const color = colors[severity] || colors.low;
+  return (
+    <span style={{ position: 'relative', display: 'inline-block' }}>
+      <motion.span style={{ position: 'absolute', inset: -3, borderRadius: '50%', background: color, opacity: 0 }}
+        animate={{ opacity: [0, 0.4, 0], scale: [0.8, 1.6, 2] }}
+        transition={{ duration: 1.4, repeat: Infinity, repeatDelay: 2 }} />
+      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: color }} />
+    </span>
+  );
+}
+export function TimelineReveal({ children }) {
+  return (
+    <motion.div initial={{ scaleX: 0, opacity: 0 }} animate={{ scaleX: 1, opacity: 1 }}
+      transition={{ duration: 0.6 }} style={{ transformOrigin: 'left center' }}>
+      {children}
+    </motion.div>
+  );
+}
+export function ScanLine() {
+  return (
+    <div style={{ position: 'relative', height: 3, background: 'var(--bg3)', borderRadius: 2, overflow: 'hidden', margin: '8px 0' }}>
+      <motion.div style={{ position: 'absolute', top: 0, left: 0, width: '30%', height: '100%',
+        background: 'linear-gradient(90deg, transparent, var(--cyan), transparent)' }}
+        animate={{ x: ['0%', '300%'] }} transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }} />
+    </div>
+  );
+}
+export function PopIn({ children, show = true }) {
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div initial={{ opacity: 0, scale: 0.85 }} animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.85 }} transition={{ duration: 0.22 }}>
+          {children}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}

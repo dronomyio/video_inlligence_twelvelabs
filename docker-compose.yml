@@ -1,0 +1,164 @@
+services:
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: viral_neo4j
+    ports:
+      - "7477:7474"
+      - "7688:7687"
+    environment:
+      NEO4J_AUTH: neo4j/viralpass123
+      NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
+      NEO4J_dbms_security_procedures_unrestricted: apoc.*,gds.*
+      NEO4J_dbms_memory_heap_initial__size: 256m
+      NEO4J_dbms_memory_heap_max__size: 512m
+      NEO4J_dbms_memory_pagecache_size: 256m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./neo4j/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 20s
+      timeout: 15s
+      retries: 15
+      start_period: 60s
+
+  redis:
+    image: redis:7-alpine
+    container_name: viral_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: viral_backend
+    ports:
+      - "8008:8000"
+    environment:
+      - TWELVELABS_API_KEY=${TWELVELABS_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - ZEROCLICK_API_KEY=${ZEROCLICK_API_KEY}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GAM_NETWORK_CODE=${GAM_NETWORK_CODE}
+      - GAM_ACCESS_TOKEN=${GAM_ACCESS_TOKEN}
+      - GAM_REFRESH_TOKEN=${GAM_REFRESH_TOKEN}
+      - GAM_CLIENT_ID=${GAM_CLIENT_ID}
+      - GAM_CLIENT_SECRET=${GAM_CLIENT_SECRET}
+      - GAM_ORDER_ID=${GAM_ORDER_ID}
+      - TTD_API_KEY=${TTD_API_KEY}
+      - TTD_ADVERTISER_ID=${TTD_ADVERTISER_ID}
+      - TTD_PARTNER_ID=${TTD_PARTNER_ID}
+      - TIKTOK_SPLIT=${TIKTOK_SPLIT:-0.40}
+      - ENABLE_GAM=${ENABLE_GAM:-false}
+      - ENABLE_TTD=${ENABLE_TTD:-false}
+      - CIRCLE_API_KEY=${CIRCLE_API_KEY}
+      - CIRCLE_WALLET_ID=${CIRCLE_WALLET_ID}
+      - CIRCLE_ENTITY_SECRET=${CIRCLE_ENTITY_SECRET}
+      - CIRCLE_ENVIRONMENT=${CIRCLE_ENVIRONMENT:-testnet}
+      - X402_PRICE_PER_QUERY=${X402_PRICE_PER_QUERY:-0.05}
+      - X402_PRICE_CAMPAIGN_MATCH=${X402_PRICE_CAMPAIGN_MATCH:-0.50}
+      - X402_PRICE_TREND_REPORT=${X402_PRICE_TREND_REPORT:-0.25}
+      - X402_ENFORCE_PAYMENT=${X402_ENFORCE_PAYMENT:-false}
+      - LTX_API_KEY=${LTX_API_KEY}
+      - LTX_DEFAULT_FORMAT=${LTX_DEFAULT_FORMAT:-6s_bumper}
+      - TRACKIT_API_KEY=${TRACKIT_API_KEY}
+      - TRACKIT_PARTNER_ID=${TRACKIT_PARTNER_ID}
+      - TRACKIT_MAM_ENDPOINT=${TRACKIT_MAM_ENDPOINT}
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=viralpass123
+      - REDIS_URL=redis://redis:6379
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - video_downloads:/app/downloads
+      - ./data:/app/data
+      - ./data:/app/data
+    depends_on:
+      neo4j:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: viral_worker
+    command: python worker.py
+    environment:
+      - TWELVELABS_API_KEY=${TWELVELABS_API_KEY}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - ZEROCLICK_API_KEY=${ZEROCLICK_API_KEY}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GAM_NETWORK_CODE=${GAM_NETWORK_CODE}
+      - GAM_ACCESS_TOKEN=${GAM_ACCESS_TOKEN}
+      - GAM_REFRESH_TOKEN=${GAM_REFRESH_TOKEN}
+      - GAM_CLIENT_ID=${GAM_CLIENT_ID}
+      - GAM_CLIENT_SECRET=${GAM_CLIENT_SECRET}
+      - GAM_ORDER_ID=${GAM_ORDER_ID}
+      - TTD_API_KEY=${TTD_API_KEY}
+      - TTD_ADVERTISER_ID=${TTD_ADVERTISER_ID}
+      - TTD_PARTNER_ID=${TTD_PARTNER_ID}
+      - TIKTOK_SPLIT=${TIKTOK_SPLIT:-0.40}
+      - ENABLE_GAM=${ENABLE_GAM:-false}
+      - ENABLE_TTD=${ENABLE_TTD:-false}
+      - CIRCLE_API_KEY=${CIRCLE_API_KEY}
+      - CIRCLE_WALLET_ID=${CIRCLE_WALLET_ID}
+      - CIRCLE_ENTITY_SECRET=${CIRCLE_ENTITY_SECRET}
+      - CIRCLE_ENVIRONMENT=${CIRCLE_ENVIRONMENT:-testnet}
+      - X402_ENFORCE_PAYMENT=${X402_ENFORCE_PAYMENT:-false}
+      - LTX_API_KEY=${LTX_API_KEY}
+      - LTX_DEFAULT_FORMAT=${LTX_DEFAULT_FORMAT:-6s_bumper}
+      - TRACKIT_API_KEY=${TRACKIT_API_KEY}
+      - TRACKIT_PARTNER_ID=${TRACKIT_PARTNER_ID}
+      - TRACKIT_MAM_ENDPOINT=${TRACKIT_MAM_ENDPOINT}
+      - NEO4J_URI=bolt://neo4j:7687
+      - NEO4J_USER=neo4j
+      - NEO4J_PASSWORD=viralpass123
+      - REDIS_URL=redis://redis:6379
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - video_downloads:/app/downloads
+      - ./data:/app/data
+      - ./data:/app/data
+    depends_on:
+      - backend
+      - redis
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: viral_frontend
+    ports:
+      - "3008:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8008
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  redis_data:
+  video_downloads:
