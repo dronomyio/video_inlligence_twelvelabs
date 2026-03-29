@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { ShieldCheck, ShieldAlert, AlertTriangle, CheckCircle, XCircle, AlertCircle, Plus, Download, Clock } from 'lucide-react';
 import api from '../api.jsx';
 import { motion, AnimatePresence } from 'framer-motion';
-import { PageWrap, FadeUp, StaggerList, StaggerItem, CountUp, AnimatedBar, ScanLine, PopIn, SeverityPing, TimelineReveal } from '../animations.jsx';
+import { PageWrap, FadeUp, StaggerList, StaggerItem, CountUp, AnimatedBar, ScanLine, PopIn, SeverityPing, TimelineReveal } from '../animations.jsx'; // animations
 
 const SEV_CONFIG = {
   critical: { color:'#ff1744', bg:'#ff174422', label:'Critical', weight:10 },

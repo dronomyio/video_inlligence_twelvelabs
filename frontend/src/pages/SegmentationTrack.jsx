@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Scissors, Clock, Download, AlertCircle, CheckCircle, Zap } from 'lucide-react';
 import api from '../api.jsx';
-import { PageWrap, FadeUp, StaggerList, StaggerItem, CountUp, AnimatedBar, ScanLine, PopIn, SeverityPing, TimelineReveal } from '../animations.jsx';
+import { PageWrap, FadeUp, StaggerList, StaggerItem, CountUp, AnimatedBar, ScanLine, PopIn, SeverityPing, TimelineReveal } from '../animations.jsx'; // animations
 
 const CONTENT_TYPES = [
   { value: 'auto',        label: 'Auto-detect' },
@@ -48,7 +49,7 @@ function Timeline({ segments, duration }) {
                     fontFamily:'var(--mono)', textTransform:'uppercase', letterSpacing:'0.08em' }}>
         Visual timeline
       </div>
-      <TimelineReveal>
+      <div>
         <div style={{ position:'relative', height:36, background:'var(--bg2)', borderRadius:4, overflow:'hidden' }}>
           {segments.map((seg, i) => {
             const t_s  = seg['sc.t_start'] ?? seg.t_start ?? 0;
@@ -69,7 +70,7 @@ function Timeline({ segments, duration }) {
             );
           })}
         </div>
-      </TimelineReveal>
+      </div>
       <div style={{ display:'flex', justifyContent:'space-between', fontSize:10, color:'var(--muted)', marginTop:3 }}>
         <span>0:00</span><span>{formatTime(total/2)}</span><span>{formatTime(total)}</span>
       </div>
@@ -105,7 +106,7 @@ export default function SegmentationTrack() {
   });
 
   const handleDownload = (fmt) => {
-    window.open(`${process.env.REACT_APP_API_URL||'http://localhost:8008'}/segment/export/${videoId}?format=${fmt}`,'_blank');
+    window.open(`${''}/segment/export/${videoId}?format=${fmt}`,'_blank');
   };
 
   return (
@@ -122,9 +123,10 @@ export default function SegmentationTrack() {
         <FadeUp delay={0.08}>
           <div className="card">
             <div className="card-title">Analyze video</div>
-            <div style={{ display:'flex', gap:8, marginBottom:10 }}>
+            <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:10 }}>
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
               <input value={videoId} onChange={e=>setVideoId(e.target.value)}
-                placeholder="Video ID" style={{ flex:1, background:'var(--bg2)',
+                placeholder="Video ID" style={{ flex:1, minWidth:200, background:'var(--bg2)',
                 border:'1px solid var(--border2)', borderRadius:6, padding:'8px 12px',
                 color:'var(--text)', fontSize:13 }} />
               <select value={contentType} onChange={e=>setContentType(e.target.value)}
@@ -136,12 +138,13 @@ export default function SegmentationTrack() {
                 min={1} max={12} title="Ad breaks" style={{ width:60, background:'var(--bg2)',
                 border:'1px solid var(--border2)', borderRadius:6, padding:'8px 10px',
                 color:'var(--text)', fontSize:13 }} />
+              </div>
               <motion.button onClick={() => analyzeMutation.mutate({videoId,contentType})}
                 disabled={analyzeMutation.isPending || !videoId.trim()}
                 whileHover={{ scale:1.03 }} whileTap={{ scale:0.97 }}
                 style={{ background:'var(--cyan)', color:'var(--bg)', border:'none', borderRadius:6,
-                         padding:'8px 18px', fontWeight:700, cursor:'pointer', fontSize:13 }}>
-                {analyzeMutation.isPending ? 'Analyzing...' : 'Analyze'}
+                         padding:'10px 24px', fontWeight:700, cursor:'pointer', fontSize:14, width:'100%' }}>
+                {analyzeMutation.isPending ? 'Analyzing...' : '▶  Analyze Video'}
               </motion.button>
             </div>
             <AnimatePresence>{analyzeMutation.isPending && <ScanLine />}</AnimatePresence>
@@ -163,7 +166,7 @@ export default function SegmentationTrack() {
 
         {/* Analysis results */}
         <PopIn show={!!analyzed}>
-          {analyzed && (
+          {analyzed ? (
             <div className="card">
               {/* Metric cards */}
               <div style={{ display:'flex', gap:16, marginBottom:12 }}>
@@ -184,13 +187,13 @@ export default function SegmentationTrack() {
                   <div className="metric-card" style={{ minWidth:120 }}>
                     <div className="metric-label">Content type</div>
                     <div className="metric-val" style={{ fontSize:16, color:'var(--amber)' }}>
-                      {analyzed.content_type || 'auto'}
+                      {analyzed?.content_type || 'auto'}
                     </div>
                   </div>
                 </FadeUp>
               </div>
 
-              <Timeline segments={analyzed.segments||[]} />
+              <Timeline segments={(analyzed?.segments)||[]} />
 
               {/* Optimize */}
               <div style={{ marginTop:12, display:'flex', gap:8, alignItems:'center' }}>
@@ -200,7 +203,7 @@ export default function SegmentationTrack() {
                   style={{ background:'#ff4455', color:'white', border:'none', borderRadius:6,
                            padding:'6px 14px', fontWeight:700, cursor:'pointer', fontSize:12 }}>
                   <Zap size={12} style={{ marginRight:4, verticalAlign:'middle' }} />
-                  {optimizeMutation.isPending ? 'Optimizing...' : `Optimize ${nBreaks} ad breaks`}
+                  {optimizeMutation.isPending ? 'Optimizing...' : `⚡ Optimize Ad Breaks (found: ${analyzed?.ad_break_count || 0})`}
                 </motion.button>
                 <span style={{ fontSize:11, color:'var(--muted)' }}>min 5-min gap * greedy by boundary quality</span>
               </div>
@@ -236,7 +239,7 @@ export default function SegmentationTrack() {
               <div style={{ marginTop:14 }}>
                 <div className="card-title">All segments</div>
                 <StaggerList>
-                  {(analyzed.segments||[]).map((seg,i) => {
+                  {((analyzed?.segments)||[]).map((seg,i) => {
                     const t_s  = seg.t_start ?? seg['sc.t_start'] ?? 0;
                     const t_e  = seg.t_end   ?? seg['sc.t_end']   ?? 0;
                     const type = seg.segment_type ?? seg['sc.segment_type'] ?? '';
@@ -263,7 +266,7 @@ export default function SegmentationTrack() {
                 </StaggerList>
               </div>
             </div>
-          )}
+          ) : null}
         </PopIn>
 
         {/* Bottom two-col */}

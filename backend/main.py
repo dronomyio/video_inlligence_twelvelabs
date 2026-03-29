@@ -113,7 +113,15 @@ async def list_videos(
     limit: int = 50,
     category: Optional[str] = None,
 ):
-    return {"videos": db.get_videos_paginated(skip=skip, limit=limit, category=category)}
+    videos = db.get_videos_paginated(skip=skip, limit=limit, category=category)
+    INDEX_ID = "69c88c3e74e8033fe643df3b"
+    TL_MAP = {"local_news_ABC_World_News_Tonight_with_David_Muir_F":"69c8ad9e9639891c46130524","local_news_NBC_Nightly_News_Full_Episode_-_Mar_21":"69c8adf611890571f37bca05","local_news_NBC_Nightly_News_Full_Episode_-_March_7":"69c8ae45c704e7c92b859857","local_prod_4K_Forest_-_Cinematic_Forest_-_4K_Nature":"69c8ae9274e8033fe643ead9","local_prod_A_THUNDERBIRDS_REUNION_Behind_the_Scenes":"69c8aeb811890571f37bca3f","local_prod_Bald_Eagles_on_the_Nooksack_River__Washi":"69c8af3911890571f37bca52","local_prod_What_14_Movies_Looked_Like_Behind_The_Sc":"69c8af6611890571f37bca61","local_spor_wilt_59min":"69c8afeb5905babfd4fc49d8"}
+    for v in videos:
+        vid = v.get("v.video_id","")
+        if not v.get("v.url") and vid in TL_MAP:
+            v["v.url"] = f"https://playground.twelvelabs.io/indexes/{INDEX_ID}/videos/{TL_MAP[vid]}"
+            v["v.platform"] = "twelvelabs"
+    return {"videos": videos}
 
 
 @app.get("/videos/{video_id}/similar")
@@ -349,7 +357,18 @@ async def analyze_video_segmentation(
     if not rec or not rec["tl_id"]:
         raise HTTPException(404, "Video not indexed in TwelveLabs yet")
 
-    segments = await tl_service.segment_video(rec["tl_id"], content_type=content_type)
+    # Check Neo4j first for existing segments
+    with db.driver.session() as s:
+        existing = s.run("""
+            MATCH (v:Video {video_id: $vid})-[:HAS_SCENE]->(sc:Scene)
+            RETURN sc ORDER BY sc.t_start
+        """, vid=video_id).data()
+    
+    if existing:
+        segments = [{"sc."+k: v for k, v in dict(r["sc"]).items()} for r in existing]
+        segments = [dict(r["sc"]) for r in existing]
+    else:
+        segments = await tl_service.segment_video(rec["tl_id"], content_type=content_type)
 
     # Write segments back to Neo4j
     for i, seg in enumerate(segments):
@@ -404,7 +423,7 @@ async def find_ad_break_moments(
 ):
     """Find optimal ad-break insertion points across the corpus."""
     q = """
-    MATCH (sc:Scene)-[:SEGMENT_OF]->(v:Video)
+    MATCH (sc:Scene)-[:SEGMENT_OF|HAS_SCENE]-(v:Video)
     WHERE (sc.segment_type = 'ad_break_point'
            OR sc.segment_type = 'commercial_break_point'
            OR sc.is_ad_break_candidate = true)
@@ -566,7 +585,7 @@ async def export_segments(video_id: str, format: str = "json"):
 @app.get("/segment/structure-analysis")
 async def structure_analysis(category: Optional[str] = None):
     """Aggregate segment type distribution across the corpus."""
-    q = "MATCH (sc:Scene)-[:SEGMENT_OF]->(v:Video)"
+    q = "MATCH (sc:Scene)-[:SEGMENT_OF|HAS_SCENE]-(v:Video)"
     if category:
         q += " WHERE v.category = $category"
     q += """
@@ -748,10 +767,16 @@ async def run_compliance_with_explanation(
     tl_flags = await tl_service.check_compliance(rec["tl_id"],
                                                    rules=[r["category"] for r in rules_to_check])
 
+    # Get Neo4j segment context
+    with db.driver.session() as _s:
+        _scenes = _s.run("MATCH (v:Video {video_id: $vid})-[:HAS_SCENE]->(sc:Scene) RETURN sc.segment_type as t, sc.t_start as ts, sc.label as lb ORDER BY sc.t_start LIMIT 15", vid=video_id).data()
+    _seg_ctx = "; ".join([f"{s['t']}@{int(s['ts'])}s:{s['lb']}" for s in _scenes]) if _scenes else "no segments"
+
     # Use Opus to generate explainable analysis
     explain_prompt = f"""You are a broadcast compliance expert reviewing video content.
 
 Video: {rec.get('title', video_id)}
+    Video segments: {_seg_ctx}
 TwelveLabs detection results: {tl_flags}
 
 Compliance rules to evaluate:

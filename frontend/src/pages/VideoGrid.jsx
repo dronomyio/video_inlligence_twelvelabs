@@ -138,7 +138,7 @@ export default function VideoGrid() {
                     </div>
                   )}
 
-                  <a href={v['v.url']} target="_blank" rel="noreferrer"
+                  <a href={v['v.url'] || (v['v.twelvelabs_video_id'] ? `https://playground.twelvelabs.io/indexes/69c88c3e74e8033fe643df3b/videos/${v['v.twelvelabs_video_id']}` : undefined)} target="_blank" rel="noreferrer"
                     style={{ fontSize: 11, color: 'var(--muted)', display: 'flex',
                       alignItems: 'center', gap: 3 }}>
                     <ExternalLink size={10} /> {v['v.platform'] || 'youtube'}

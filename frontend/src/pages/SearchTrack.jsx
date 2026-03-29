@@ -146,9 +146,9 @@ export default function SearchTrack() {
             )}
 
             <StaggerList>
-              {(results?.results || []).map((r, i) => (
+              {(results?.results || []).map((r, i) => { const tlUrl = r['v.url'] || (r.tl_video_id ? `https://playground.twelvelabs.io/indexes/69c88c3e74e8033fe643df3b/videos/${r.tl_video_id}` : null); return (
                 <StaggerItem key={i}>
-                  <div style={{ display: 'flex', gap: 12, padding: '10px 0',
+                  <div onClick={() => { if(tlUrl) window.open(tlUrl,'_blank'); }} style={{ display: 'flex', gap: 12, cursor: tlUrl?'pointer':'default', padding: '10px 0',
                                 borderBottom: '1px solid var(--border)' }}>
                     <div style={{ width: 80, height: 52, background: 'var(--bg3)', borderRadius: 4,
                                   flexShrink: 0, display: 'flex', alignItems: 'center',
@@ -179,7 +179,7 @@ export default function SearchTrack() {
                     </div>
                   </div>
                 </StaggerItem>
-              ))}
+              ); })}
             </StaggerList>
           </div>
         </PopIn>
